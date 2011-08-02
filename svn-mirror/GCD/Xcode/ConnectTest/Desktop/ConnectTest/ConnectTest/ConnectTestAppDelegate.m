@@ -1,5 +1,4 @@
-#import "IPhoneConnectTestAppDelegate.h"
-#import "IPhoneConnectTestViewController.h"
+#import "ConnectTestAppDelegate.h"
 #import "GCDAsyncSocket.h"
 #import "DDLog.h"
 #import "DDTTYLogger.h"
@@ -7,45 +6,19 @@
 // Log levels: off, error, warn, info, verbose
 static const int ddLogLevel = LOG_LEVEL_INFO;
 
+#define USE_SECURE_CONNECTION 0
 
-@implementation IPhoneConnectTestAppDelegate
+
+@implementation ConnectTestAppDelegate
 
 @synthesize window;
-@synthesize viewController;
 
-- (void)normalConnect
-{
-	NSError *error = nil;
-	
-	NSString *host = @"google.com";
-//	NSString *host = @"deusty.com";
-	
-	if (![asyncSocket connectToHost:host onPort:80 error:&error])
-	{
-		DDLogError(@"Error connecting: %@", error);
-	}
-
-	// You can also specify an optional connect timeout.
-	
-//	if (![asyncSocket connectToHost:host onPort:80 withTimeout:5.0 error:&error])
-//	{
-//		DDLogError(@"Error connecting: %@", error);
-//	}
-}
-
-- (void)secureConnect
-{
-	NSError *error = nil;
-	if (![asyncSocket connectToHost:@"www.paypal.com" onPort:443 error:&error])
-	{
-		DDLogError(@"Error connecting: %@", error);
-	}
-}
-
-- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
+- (void)applicationDidFinishLaunching:(NSNotification *)aNotification
 {
 	// Setup logging framework
 	[DDLog addLogger:[DDTTYLogger sharedInstance]];
+	
+	DDLogInfo(@"%@", THIS_METHOD);
 	
 	// Setup our socket (GCDAsyncSocket).
 	// The socket will invoke our delegate methods using the usual delegate paradigm.
@@ -63,15 +36,48 @@ static const int ddLogLevel = LOG_LEVEL_INFO;
 	
 	asyncSocket = [[GCDAsyncSocket alloc] initWithDelegate:self delegateQueue:mainQueue];
 	
-	[self normalConnect];
-//	[self secureConnect];
+	#if USE_SECURE_CONNECTION
+	{
+		NSString *host = @"www.paypal.com";
+		uint16_t port = 443;
+		
+		DDLogInfo(@"Connecting to \"%@\" on port %hu...", host, port);
+		
+		NSError *error = nil;
+		if (![asyncSocket connectToHost:@"www.paypal.com" onPort:port error:&error])
+		{
+			DDLogError(@"Error connecting: %@", error);
+		}
+	}
+	#else
+	{
+		NSString *host = @"deusty.com";
+		uint16_t port = 80;
 	
-	// Add the view controller's view to the window and display.
-	[window addSubview:viewController.view];
-	[window makeKeyAndVisible];
-	
-	return YES;
+		
+		DDLogInfo(@"Connecting to \"%@\" on port %hu...", host, port);
+		
+		NSError *error = nil;
+		if (![asyncSocket connectToHost:host onPort:port error:&error])
+		{
+			DDLogError(@"Error connecting: %@", error);
+		}
+
+		// You can also specify an optional connect timeout.
+		
+	//	NSError *error = nil;
+	//	if (![asyncSocket connectToHost:host onPort:80 withTimeout:5.0 error:&error])
+	//	{
+	//		DDLogError(@"Error connecting: %@", error);
+	//	}
+		
+	}
+	#endif
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+#pragma mark Socket Delegate
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 - (void)socket:(GCDAsyncSocket *)sock didConnectToHost:(NSString *)host port:(UInt16)port
 {
@@ -79,21 +85,9 @@ static const int ddLogLevel = LOG_LEVEL_INFO;
 	
 //	DDLogInfo(@"localHost :%@ port:%hu", [sock localHost], [sock localPort]);
 	
-	if (port == 443)
+	#if USE_SECURE_CONNECTION
 	{
-		
-	#if !TARGET_IPHONE_SIMULATOR
-		
-		// Backgrounding doesn't seem to be supported on the simulator yet
-		
-		[sock performBlock:^{
-			if ([sock enableBackgroundingOnSocketWithCaveat])
-				DDLogInfo(@"Enabled backgrounding on socket");
-			else
-				DDLogWarn(@"Enabling backgrounding failed!");
-		}];
-		
-	#endif
+		// Connected to secure server (HTTPS)
 		
 		// Configure SSL/TLS settings
 		NSMutableDictionary *settings = [NSMutableDictionary dictionaryWithCapacity:3];
@@ -124,14 +118,20 @@ static const int ddLogLevel = LOG_LEVEL_INFO;
 	//	[settings setObject:[NSNumber numberWithBool:NO]
 	//				 forKey:(NSString *)kCFStreamSSLValidatesCertificateChain];
 		
-		DDLogVerbose(@"Starting TLS with settings:\n%@", settings);
+		DDLogInfo(@"Starting TLS with settings:\n%@", settings);
 		
 		[sock startTLS:settings];
 		
 		// You can also pass nil to the startTLS method, which is the same as passing an empty dictionary.
 		// Again, you should understand the security implications of doing so.
 		// Please see the documentation for the startTLS method in GCDAsyncSocket.h for a full discussion.
+		
 	}
+	#else
+	{
+		// Connected to normal server (HTTP)
+	}
+	#endif
 }
 
 - (void)socketDidSecure:(GCDAsyncSocket *)sock
@@ -139,17 +139,19 @@ static const int ddLogLevel = LOG_LEVEL_INFO;
 	DDLogInfo(@"socketDidSecure:%p", sock);
 }
 
+- (void)socket:(GCDAsyncSocket *)sock didWriteDataWithTag:(long)tag
+{
+	DDLogInfo(@"socket:%p didWriteDataWithTag:%d", sock, tag);
+}
+
+- (void)socket:(GCDAsyncSocket *)sock didReadData:(NSData *)data withTag:(long)tag
+{
+	DDLogInfo(@"socket:%p didReadData:withTag:%d", sock, tag);
+}
+
 - (void)socketDidDisconnect:(GCDAsyncSocket *)sock withError:(NSError *)err
 {
 	DDLogInfo(@"socketDidDisconnect:%p withError: %@", sock, err);
 }
-
-- (void)dealloc
-{
-	[viewController release];
-	[window release];
-	[super dealloc];
-}
-
 
 @end
